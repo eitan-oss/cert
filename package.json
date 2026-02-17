@@ -1,9 +1,10 @@
 {
   "name": "slack-cert-review",
   "version": "1.0.0",
-  "description": "",
+  "description": "Slack certification review app",
   "main": "index.js",
   "scripts": {
+    "start": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -11,6 +12,8 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0",
     "@slack/bolt": "^4.6.0",
     "dotenv": "^17.2.4"
   }
