@@ -2,22 +2,40 @@ require("dotenv").config();
 const { App } = require("@slack/bolt");
 
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
-const SLACK_APP_TOKEN = process.env.SLACK_APP_TOKEN;
+const isVercel = process.env.VERCEL === "1";
 
 if (!SLACK_BOT_TOKEN || SLACK_BOT_TOKEN.trim() === "") {
   console.error("FATAL: SLACK_BOT_TOKEN is missing or empty. Set it in .env and try again.");
   process.exit(1);
 }
-if (!SLACK_APP_TOKEN || SLACK_APP_TOKEN.trim() === "") {
+if (!isVercel && (!process.env.SLACK_APP_TOKEN || process.env.SLACK_APP_TOKEN.trim() === "")) {
   console.error("FATAL: SLACK_APP_TOKEN is missing or empty. Set it in .env and try again.");
   process.exit(1);
 }
+if (isVercel && (!process.env.SLACK_SIGNING_SECRET || process.env.SLACK_SIGNING_SECRET.trim() === "")) {
+  console.error("FATAL: SLACK_SIGNING_SECRET is missing. Required for Vercel deployment.");
+  process.exit(1);
+}
 
-const app = new App({
-  token: SLACK_BOT_TOKEN,
-  appToken: SLACK_APP_TOKEN,
-  socketMode: true,
-});
+let app;
+let receiver;
+if (isVercel) {
+  const { ExpressReceiver } = require("@slack/bolt");
+  receiver = new ExpressReceiver({
+    signingSecret: process.env.SLACK_SIGNING_SECRET,
+    endpoints: "/",
+  });
+  app = new App({
+    token: SLACK_BOT_TOKEN,
+    receiver,
+  });
+} else {
+  app = new App({
+    token: SLACK_BOT_TOKEN,
+    appToken: process.env.SLACK_APP_TOKEN,
+    socketMode: true,
+  });
+}
 
 // ---------- Data layer (DynamoDB or in-memory) ----------
 const db = require("./db");
@@ -922,10 +940,14 @@ app.error((err) => {
   console.error("Bolt error:", err);
 });
 
-(async () => {
-  await app.start();
-  console.log("⚡️ Slack app is running (Socket Mode). Listening for /certify...");
-})().catch((err) => {
-  console.error("FATAL: Failed to start:", err.message);
-  process.exit(1);
-});
+if (isVercel) {
+  module.exports = { app, receiver };
+} else {
+  (async () => {
+    await app.start();
+    console.log("⚡️ Slack app is running (Socket Mode). Listening for /certify...");
+  })().catch((err) => {
+    console.error("FATAL: Failed to start:", err.message);
+    process.exit(1);
+  });
+}

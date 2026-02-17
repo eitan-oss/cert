@@ -1,39 +1,43 @@
 /**
  * Vercel serverless endpoint for Slack Events API.
- * Slack sends all events, commands, and interactions here.
- *
- * We handle url_verification immediately (Slack's URL challenge) before
- * loading the Bolt app, since Slack requires a fast response.
+ * Uses @slack/bolt ExpressReceiver (no @vercel/slack-bolt dependency).
  */
-const handler = async (request) => {
-  const method = request.method || "GET";
-  const text = method === "POST" ? await request.text() : "";
+const getRawBody = (req) =>
+  new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
 
-  if (method === "POST" && text) {
-    try {
-      const body = JSON.parse(text);
-      if (body.type === "url_verification" && body.challenge) {
-        return new Response(JSON.stringify({ challenge: body.challenge }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-    } catch {
-      /* fall through to bolt handler */
-    }
+module.exports = async function handler(req, res) {
+  if (req.method === "GET") {
+    return res.status(200).send("Slack endpoint OK — use POST for events");
+  }
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { createHandler } = require("@vercel/slack-bolt");
-  const { app, receiver } = require("../index.js");
-  const boltHandler = createHandler(app, receiver);
-  const rebuiltRequest = new Request(request.url, {
-    method: request.method,
-    headers: request.headers,
-    body: text || undefined,
-  });
-  return boltHandler(rebuiltRequest);
-};
+  const rawBody = await getRawBody(req);
+  req.rawBody = rawBody;
 
-module.exports = {
-  fetch: handler,
+  let body;
+  try {
+    body = JSON.parse(rawBody.toString());
+  } catch {
+    body = {};
+  }
+
+  if (body.type === "url_verification" && body.challenge) {
+    return res.status(200).json({ challenge: body.challenge });
+  }
+
+  req.url = req.url?.replace(/^\/api\/slack.*/, "/") || "/";
+  const { app, receiver } = require("../index.js");
+  await app.init();
+  return new Promise((resolve, reject) => {
+    res.on("finish", resolve);
+    res.on("error", reject);
+    receiver.app(req, res);
+  });
 };

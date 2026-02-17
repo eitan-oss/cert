@@ -132,9 +132,16 @@ Serverless functions are stateless. Data does **not** persist between invocation
 
 ## Troubleshooting
 
+**Before retrying URL verification:**
+
+1. Visit `https://your-app.vercel.app/api/slack` in a browser — you should see `Slack endpoint OK — use POST for events`. If you get 404, the function isn’t deployed.
+2. Confirm `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` are set in Vercel → Settings → Environment Variables.
+3. Redeploy after changing env vars (they only apply to new deployments).
+4. Use exactly `https://your-app.vercel.app/api/slack` (no trailing slash) in Slack Event Subscriptions.
+
 | Issue | Check |
 |-------|-------|
-| URL verification fails | 1) Ensure `SLACK_SIGNING_SECRET` is set in Vercel env vars. 2) Redeploy after adding it. 3) URL must be exactly `https://...vercel.app/api/slack` |
+| URL verification fails | Endpoint reachable? Env vars set? Redeployed after adding them? |
 | 404 on /api/slack | Ensure `api/slack.js` exists and is in the repo |
 | Modal doesn’t open | Check Interactivity URL and that `SLACK_SIGNING_SECRET` is set |
 | Events not received | Check Events API Request URL and subscribed events |
