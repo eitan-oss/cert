@@ -1,41 +1,26 @@
 #!/usr/bin/env node
 /**
- * Export certification history from the database.
- * Run: node scripts/export-cert-history.js
+ * Export certification history from the database to CSV.
+ * Run: npm run export-history
  *
- * Uses .env for credentials. For Vercel KV: set USE_VERCEL_KV=1, KV_REST_API_URL, KV_REST_API_TOKEN
- * (Or pull env from Vercel: vercel env pull)
+ * Names are stored in the DB when certs are created/reviewed (no Slack API needed).
+ * Loads .env and .env.local for DB credentials.
  */
+const path = require("path");
 require("dotenv").config();
+require("dotenv").config({ path: path.resolve(process.cwd(), ".env.local") });
 const db = require("../db");
 
-async function resolveUserName(client, userId) {
-  if (!client || !userId) return userId;
-  try {
-    const res = await client.users.info({ user: userId });
-    return res.user?.real_name || res.user?.name || userId;
-  } catch {
-    return userId;
-  }
-}
-
 async function main() {
-  const useSlack = !!process.env.SLACK_BOT_TOKEN;
-  let client = null;
-  if (useSlack) {
-    const { WebClient } = require("@slack/web-api");
-    client = new WebClient(process.env.SLACK_BOT_TOKEN);
-  }
-
   const sessions = await db.getAllSessions();
   const rows = [];
 
   for (const session of sessions) {
     const reviews = await db.getReviewsForSession(session.session_id);
-    const aeName = useSlack ? await resolveUserName(client, session.ae_id) : session.ae_id;
+    const aeName = session.ae_name || session.ae_id;
 
     for (const r of reviews) {
-      const reviewerName = useSlack ? await resolveUserName(client, r.reviewer_id) : r.reviewer_id;
+      const reviewerName = r.reviewer_name || r.reviewer_id;
       let scoreStr = "";
       if (r.rubric_type === "week1") {
         scoreStr = `Sales: ${r.sales_count}/5, Product: ${r.product_count}/5`;

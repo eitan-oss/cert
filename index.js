@@ -726,14 +726,13 @@ app.view("manager_certify_modal", async ({ ack, body, view, client }) => {
 
   const runInBackground = async () => {
     try {
-      const session = await db.createSession(aeId, week, reviewerIds, managerId, notes);
-      const sessionId = session.session_id;
-
       let aeName = aeId;
       try {
         const u = await client.users.info({ user: aeId });
         aeName = u.user?.real_name || u.user?.name || aeId;
       } catch (_) {}
+      const session = await db.createSession(aeId, week, reviewerIds, managerId, notes, aeName);
+      const sessionId = session.session_id;
 
       const reviewerDms = {};
       for (const reviewerId of session.reviewer_ids) {
@@ -833,6 +832,12 @@ app.view("reviewer_review_modal", async ({ ack, body, view, client }) => {
     return;
   }
 
+  let reviewerName = reviewerId;
+  try {
+    const u = await client.users.info({ user: reviewerId });
+    reviewerName = u.user?.real_name || u.user?.name || reviewerId;
+  } catch (_) {}
+
   const rubric = getRubric(session.week);
 
   if (session.week === "Week 1" && rubric) {
@@ -864,6 +869,7 @@ app.view("reviewer_review_modal", async ({ ack, body, view, client }) => {
       product_count: productPassed,
       passed: evalResult.passed,
       feedback,
+      reviewer_name: reviewerName,
     });
   } else if ((session.week === "Week 2" || session.week === "Week 3" || session.week === "Week 4") && rubric?.sections) {
     const commentsAction = values.comments_block?.comments_input;
@@ -887,6 +893,7 @@ app.view("reviewer_review_modal", async ({ ack, body, view, client }) => {
       gates: evalResult.gates,
       feedback: notes || "",
       payload,
+      reviewer_name: reviewerName,
     });
   } else {
     const commentsAction = values.comments_block?.comments_input;
@@ -905,6 +912,7 @@ app.view("reviewer_review_modal", async ({ ack, body, view, client }) => {
       rubric_type: "legacy",
       rating: Number(rating),
       feedback,
+      reviewer_name: reviewerName,
     });
   }
 

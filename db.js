@@ -107,12 +107,13 @@ async function kvGetAllSessions() {
 }
 
 // ---------- Session operations ----------
-async function createSession(aeId, week, reviewerIds, managerId, notes) {
+async function createSession(aeId, week, reviewerIds, managerId, notes, aeName = null) {
   const sessionId = generateSessionId();
   const allReviewers = [...new Set([managerId, ...reviewerIds])];
   const session = {
     session_id: sessionId,
     ae_id: aeId,
+    ae_name: aeName || null,
     week,
     reviewer_ids: allReviewers,
     manager_id: managerId,
@@ -382,6 +383,7 @@ async function saveReview(sessionId, reviewerId, data) {
   const item = {
     session_id: sessionId,
     reviewer_id: reviewerId,
+    reviewer_name: data.reviewer_name || null,
     feedback: String(data.feedback || "").trim(),
     submitted_at: Date.now(),
   };
