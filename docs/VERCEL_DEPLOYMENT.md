@@ -141,7 +141,7 @@ Serverless functions are stateless. Data does **not** persist between invocation
 
 | Issue | Check |
 |-------|-------|
-| URL verification fails | Endpoint reachable? Env vars set? Redeployed after adding them? |
+| URL verification fails | Use exactly `https://your-app.vercel.app/api/slack` (no trailing slash). Visit in browser first — should show "Slack endpoint OK". Redeploy after adding env vars. |
 | 404 on /api/slack | Ensure `api/slack.js` exists and is in the repo |
 | Modal doesn’t open | Check Interactivity URL and that `SLACK_SIGNING_SECRET` is set |
 | Events not received | Check Events API Request URL and subscribed events |

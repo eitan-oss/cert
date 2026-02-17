@@ -20,14 +20,14 @@ if (isVercel && (!process.env.SLACK_SIGNING_SECRET || process.env.SLACK_SIGNING_
 let app;
 let receiver;
 if (isVercel) {
-  const { ExpressReceiver } = require("@slack/bolt");
-  receiver = new ExpressReceiver({
+  const { VercelReceiver } = require("@vercel/slack-bolt");
+  receiver = new VercelReceiver({
     signingSecret: process.env.SLACK_SIGNING_SECRET,
-    endpoints: "/",
   });
   app = new App({
     token: SLACK_BOT_TOKEN,
     receiver,
+    deferInitialization: true,
   });
 } else {
   app = new App({
