@@ -6,7 +6,6 @@
 const WEEK_1_RUBRIC = {
   week: "Week 1",
   sales_process: {
-    weight: "60%",
     items: [
       "Active listening + sharp follow-up questions",
       "Identifies pain points tied to engineering and business outcomes",
@@ -16,7 +15,6 @@ const WEEK_1_RUBRIC = {
     ],
   },
   product_domain: {
-    weight: "40%",
     items: [
       "Demonstrates understanding of software development methodologies",
       "Asks intelligent questions about current engineering workflows",
@@ -26,13 +24,13 @@ const WEEK_1_RUBRIC = {
     ],
   },
   /**
-   * Pass criteria: All Sales Process + minimum 3/5 Product/Domain
+   * Pass criteria: Min 4/5 Sales Process + min 3/5 Product/Domain
    */
   evaluate(salesChecked, productChecked) {
-    const allSales = salesChecked.length === 5;
+    const minSales = salesChecked.length >= 4;
     const minProduct = productChecked.length >= 3;
     return {
-      passed: allSales && minProduct,
+      passed: minSales && minProduct,
       sales_count: salesChecked.length,
       sales_total: 5,
       product_count: productChecked.length,

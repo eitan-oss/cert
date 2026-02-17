@@ -1,11 +1,27 @@
 /**
- * Data layer: DynamoDB (when AWS configured) or in-memory fallback for local dev.
- * Set USE_DYNAMODB=1 and AWS credentials/region to use DynamoDB.
+ * Data layer: Vercel KV, DynamoDB, or in-memory fallback.
+ *
+ * Vercel KV (no AWS): Add Upstash Redis from Vercel Marketplace, set USE_VERCEL_KV=1
+ * DynamoDB: Set USE_DYNAMODB=1 and AWS credentials
+ * In-memory: Default for local dev (data resets on restart)
  */
 
 const crypto = require("crypto");
 
+const USE_VERCEL_KV = process.env.USE_VERCEL_KV === "1";
 const USE_DYNAMODB = process.env.USE_DYNAMODB === "1";
+
+let kv = null;
+if (USE_VERCEL_KV) {
+  try {
+    const { createClient, kv: defaultKv } = require("@vercel/kv");
+    const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+    kv = url && token ? createClient({ url, token }) : defaultKv;
+  } catch (err) {
+    console.warn("[db] Vercel KV init failed, falling back to in-memory:", err.message);
+  }
+}
 
 let dynamoClient = null;
 let docClient = null;
@@ -55,6 +71,21 @@ async function dynamoQuery(table, keyCondition, attrs = {}) {
   return res.Items || [];
 }
 
+// ---------- KV helpers ----------
+async function kvGetAllSessions() {
+  const list = [];
+  if (!kv) return list;
+  try {
+    for await (const key of kv.scanIterator({ match: "session:*" })) {
+      const session = await kv.get(key);
+      if (session) list.push(session);
+    }
+  } catch (err) {
+    console.error("kvGetAllSessions error:", err.message);
+  }
+  return list;
+}
+
 // ---------- Session operations ----------
 async function createSession(aeId, week, reviewerIds, managerId, notes) {
   const sessionId = generateSessionId();
@@ -71,7 +102,9 @@ async function createSession(aeId, week, reviewerIds, managerId, notes) {
     created_at: Date.now(),
   };
 
-  if (USE_DYNAMODB) {
+  if (USE_VERCEL_KV && kv) {
+    await kv.set(`session:${sessionId}`, session);
+  } else if (USE_DYNAMODB) {
     await dynamoPut(SESSIONS_TABLE, session);
   } else {
     sessions.set(sessionId, session);
@@ -80,6 +113,9 @@ async function createSession(aeId, week, reviewerIds, managerId, notes) {
 }
 
 async function getSession(sessionId) {
+  if (USE_VERCEL_KV && kv) {
+    return kv.get(`session:${sessionId}`);
+  }
   if (USE_DYNAMODB) {
     return dynamoGet(SESSIONS_TABLE, { session_id: sessionId });
   }
@@ -90,7 +126,9 @@ async function updateSession(sessionId, updates) {
   const session = await getSession(sessionId);
   if (!session) return null;
   const updated = { ...session, ...updates };
-  if (USE_DYNAMODB) {
+  if (USE_VERCEL_KV && kv) {
+    await kv.set(`session:${sessionId}`, updated);
+  } else if (USE_DYNAMODB) {
     await dynamoPut(SESSIONS_TABLE, updated);
   } else {
     sessions.set(sessionId, updated);
@@ -101,7 +139,17 @@ async function updateSession(sessionId, updates) {
 async function getPendingSessionsForReviewer(userId) {
   const pending = [];
   try {
-    if (USE_DYNAMODB) {
+    if (USE_VERCEL_KV && kv) {
+      const items = await kvGetAllSessions();
+      for (const session of items) {
+        if (session.status !== "pending") continue;
+        const reviewerIds = session.reviewer_ids || [];
+        if (!Array.isArray(reviewerIds) || !reviewerIds.includes(userId)) continue;
+        const sessionReviews = await getReviewsForSession(session.session_id);
+        const hasSubmitted = sessionReviews.some((r) => r.reviewer_id === userId);
+        if (!hasSubmitted) pending.push(session);
+      }
+    } else if (USE_DYNAMODB) {
       const { ScanCommand } = require("@aws-sdk/lib-dynamodb");
       const res = await docClient.send(
         new ScanCommand({
@@ -137,7 +185,16 @@ async function getPendingSessionsForReviewer(userId) {
 async function getSubmittedSessionsForReviewer(userId) {
   const submitted = [];
   try {
-    if (USE_DYNAMODB) {
+    if (USE_VERCEL_KV && kv) {
+      const items = await kvGetAllSessions();
+      for (const session of items) {
+        if (session.status !== "pending") continue;
+        if (!(session.reviewer_ids || []).includes(userId)) continue;
+        const sessionReviews = await getReviewsForSession(session.session_id);
+        const hasSubmitted = sessionReviews.some((r) => r.reviewer_id === userId);
+        if (hasSubmitted) submitted.push(session);
+      }
+    } else if (USE_DYNAMODB) {
       const { ScanCommand } = require("@aws-sdk/lib-dynamodb");
       const res = await docClient.send(
         new ScanCommand({
@@ -172,7 +229,10 @@ async function getSubmittedSessionsForReviewer(userId) {
 async function getSessionsForManager(managerId) {
   const list = [];
   try {
-    if (USE_DYNAMODB) {
+    if (USE_VERCEL_KV && kv) {
+      const items = await kvGetAllSessions();
+      list.push(...items.filter((s) => s.manager_id === managerId));
+    } else if (USE_DYNAMODB) {
       const { ScanCommand } = require("@aws-sdk/lib-dynamodb");
       const res = await docClient.send(
         new ScanCommand({
@@ -196,7 +256,10 @@ async function getSessionsForManager(managerId) {
 async function getSessionsForAE(aeId) {
   const list = [];
   try {
-    if (USE_DYNAMODB) {
+    if (USE_VERCEL_KV && kv) {
+      const items = await kvGetAllSessions();
+      list.push(...items.filter((s) => s.ae_id === aeId && s.shared_with_ae));
+    } else if (USE_DYNAMODB) {
       const { ScanCommand } = require("@aws-sdk/lib-dynamodb");
       const res = await docClient.send(
         new ScanCommand({
@@ -220,7 +283,10 @@ async function getSessionsForAE(aeId) {
 async function getSessionsWhereIAmAEPending(aeId) {
   const list = [];
   try {
-    if (USE_DYNAMODB) {
+    if (USE_VERCEL_KV && kv) {
+      const items = await kvGetAllSessions();
+      list.push(...items.filter((s) => s.ae_id === aeId && !s.shared_with_ae));
+    } else if (USE_DYNAMODB) {
       const { ScanCommand } = require("@aws-sdk/lib-dynamodb");
       const res = await docClient.send(
         new ScanCommand({
@@ -244,7 +310,13 @@ async function getSessionsWhereIAmAEPending(aeId) {
 }
 
 async function setSessionComplete(sessionId) {
-  if (USE_DYNAMODB) {
+  if (USE_VERCEL_KV && kv) {
+    const session = await getSession(sessionId);
+    if (session) {
+      session.status = "complete";
+      await kv.set(`session:${sessionId}`, session);
+    }
+  } else if (USE_DYNAMODB) {
     const { UpdateCommand } = require("@aws-sdk/lib-dynamodb");
     await docClient.send(
       new UpdateCommand({
@@ -263,6 +335,14 @@ async function setSessionComplete(sessionId) {
 
 // ---------- Review operations ----------
 async function getReviewsForSession(sessionId) {
+  if (USE_VERCEL_KV && kv) {
+    const list = [];
+    for await (const key of kv.scanIterator({ match: `review:${sessionId}:*` })) {
+      const review = await kv.get(key);
+      if (review) list.push(review);
+    }
+    return list;
+  }
   if (USE_DYNAMODB) {
     return dynamoQuery(REVIEWS_TABLE, {
       expr: "session_id = :sid",
@@ -301,7 +381,9 @@ async function saveReview(sessionId, reviewerId, data) {
     item.rating = Number(data.rating);
   }
 
-  if (USE_DYNAMODB) {
+  if (USE_VERCEL_KV && kv) {
+    await kv.set(`review:${sessionId}:${reviewerId}`, item);
+  } else if (USE_DYNAMODB) {
     await dynamoPut(REVIEWS_TABLE, item);
   } else {
     const key = `${sessionId}|${reviewerId}`;
@@ -322,4 +404,5 @@ module.exports = {
   saveReview,
   setSessionComplete,
   USE_DYNAMODB,
+  USE_VERCEL_KV,
 };

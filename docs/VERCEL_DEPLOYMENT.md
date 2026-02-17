@@ -38,12 +38,11 @@ In **Vercel** → Your Project → **Settings** → **Environment Variables**, a
 |----------|-------|----------|
 | `SLACK_BOT_TOKEN` | `xoxb-...` (Bot User OAuth Token) | Yes |
 | `SLACK_SIGNING_SECRET` | From Slack app → Basic Information | Yes |
-| `USE_DYNAMODB` | `1` if using DynamoDB | No (default: in-memory) |
+| `USE_VERCEL_KV` | `1` if using Vercel KV (Redis) | No |
+| `USE_DYNAMODB` | `1` if using DynamoDB | No |
 | `AWS_REGION` | e.g. `us-east-1` | If using DynamoDB |
 | `AWS_ACCESS_KEY_ID` | Your AWS key | If using DynamoDB |
 | `AWS_SECRET_ACCESS_KEY` | Your AWS secret | If using DynamoDB |
-| `SESSIONS_TABLE` | e.g. `cert-sessions` | Optional override |
-| `REVIEWS_TABLE` | e.g. `cert-reviews` | Optional override |
 
 **Note:** You do **not** need `SLACK_APP_TOKEN` on Vercel. That’s only for Socket Mode (local dev).
 
@@ -125,8 +124,85 @@ Serverless functions are stateless. Data does **not** persist between invocation
 **Options:**
 
 1. **In-memory** (default) — Data resets on each cold start. Fine for demos.
-2. **DynamoDB** — Set `USE_DYNAMODB=1` and AWS credentials. Data persists.
-3. **Vercel KV / Postgres** — You would need to add an adapter in `db.js` (not included by default).
+2. **Vercel KV (Redis)** — Add Redis from Vercel Marketplace. No AWS needed. **Recommended.**
+3. **DynamoDB** — Set `USE_DYNAMODB=1` and AWS credentials.
+
+### Option A: Vercel KV (recommended — no AWS)
+
+1. Go to [Vercel Dashboard](https://vercel.com) → your project → **Storage** tab (or **Integrations**).
+2. Click **Create Database** / **Add Integration**.
+3. Choose **Upstash Redis** (or **Redis** from the [Marketplace](https://vercel.com/marketplace?category=storage&search=redis)).
+4. Follow the prompts to create the database. Vercel will inject `KV_REST_API_URL` and `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`) into your project.
+5. Add one environment variable in **Settings** → **Environment Variables**:
+   | Variable | Value |
+   |----------|-------|
+   | `USE_VERCEL_KV` | `1` |
+6. **Redeploy** so the new env var takes effect.
+
+Data will now persist. No AWS account or tables to create.
+
+### Option B: DynamoDB (requires AWS)
+
+The app already supports DynamoDB. To enable it:
+
+#### 1. Create DynamoDB tables in AWS
+
+Using AWS CLI (ensure you have `aws configure` set up):
+
+```bash
+./scripts/create-dynamodb-tables.sh
+```
+
+Or create manually in [AWS Console → DynamoDB](https://console.aws.amazon.com/dynamodb):
+
+| Table          | Partition key      | Sort key        | Billing         |
+|----------------|--------------------|-----------------|-----------------|
+| `cert-sessions`| `session_id` (S)   | —               | On-demand       |
+| `cert-reviews` | `session_id` (S)   | `reviewer_id` (S)| On-demand     |
+
+#### 2. Create IAM credentials for Vercel
+
+1. Go to [AWS IAM Console](https://console.aws.amazon.com/iam) → **Users** → **Create user** (e.g. `cert-vercel`)
+2. Attach a policy (or create inline) with these permissions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:Query",
+      "dynamodb:Scan"
+    ],
+    "Resource": [
+      "arn:aws:dynamodb:us-east-1:YOUR_ACCOUNT_ID:table/cert-sessions",
+      "arn:aws:dynamodb:us-east-1:YOUR_ACCOUNT_ID:table/cert-reviews"
+    ]
+  }]
+}
+```
+
+Replace `YOUR_ACCOUNT_ID` and `us-east-1` with your AWS account ID and region.
+
+3. Create an **Access key** for the user and copy the Access Key ID and Secret Access Key.
+
+#### 3. Add environment variables in Vercel
+
+In **Vercel** → Your Project → **Settings** → **Environment Variables**:
+
+| Variable | Value |
+|----------|-------|
+| `USE_DYNAMODB` | `1` |
+| `AWS_REGION` | `us-east-1` (or your region) |
+| `AWS_ACCESS_KEY_ID` | From step 2 |
+| `AWS_SECRET_ACCESS_KEY` | From step 2 |
+
+#### 4. Redeploy
+
+Redeploy your app so the new env vars take effect. Data will now persist.
 
 ---
 

@@ -17,7 +17,17 @@ async function fetch(request) {
     });
   }
   try {
-    return await slackHandler(request);
+    const text = await request.clone().text();
+    let payload = {};
+    try {
+      const parsed = text.startsWith("{") ? JSON.parse(text) : Object.fromEntries(new URLSearchParams(text));
+      payload = typeof parsed.payload === "string" ? JSON.parse(parsed.payload) : parsed;
+    } catch (_) {}
+    console.log("[api/slack] POST type:", payload.type || payload.command ? `cmd:${payload.command}` : "unknown");
+
+    const res = await slackHandler(request);
+    console.log("[api/slack] Response status:", res?.status);
+    return res;
   } catch (err) {
     console.error("[api/slack] Error:", err);
     return new Response(

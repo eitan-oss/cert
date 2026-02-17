@@ -118,12 +118,12 @@ function buildWeek1RubricModal(sessionId, rubric) {
   const blocks = [
     {
       type: "section",
-      text: { type: "mrkdwn", text: "*Sales Process Skills (60%)* _Rep needs 5/5 to pass. Check each item the AE demonstrated:_" },
+      text: { type: "mrkdwn", text: "*Sales Process Skills* _Check each item the AE demonstrated (min 4/5 to pass):_" },
     },
     ...rubric.sales_process.items.map((label, i) => ({
       type: "input",
       block_id: `sales_${i + 1}`,
-      optional: false,
+      optional: true,
       element: {
         type: "checkboxes",
         action_id: `sales_${i + 1}_check`,
@@ -133,12 +133,12 @@ function buildWeek1RubricModal(sessionId, rubric) {
     })),
     {
       type: "section",
-      text: { type: "mrkdwn", text: "*Product/Domain Knowledge (40%)* _Check each item (min 3/5 to pass):_" },
+      text: { type: "mrkdwn", text: "*Product/Domain Knowledge* _Check each item demonstrated (min 3/5 to pass):_" },
     },
     ...rubric.product_domain.items.map((label, i) => ({
       type: "input",
       block_id: `product_${i + 1}`,
-      optional: false,
+      optional: true,
       element: {
         type: "checkboxes",
         action_id: `product_${i + 1}_check`,
@@ -699,6 +699,7 @@ app.command("/certify", async ({ ack, body, client }) => {
 
 // Manager modal submit: create session, DM each reviewer with "Submit review" button
 app.view("manager_certify_modal", async ({ ack, body, view, client }) => {
+  console.log("[manager_certify_modal] received");
   const values = view.state.values;
   const aeId = values.ae_block?.ae_select?.selected_user;
   const weekOption = values.week_block?.week_select?.selected_option;
@@ -718,56 +719,83 @@ app.view("manager_certify_modal", async ({ ack, body, view, client }) => {
     return;
   }
 
-  const session = await db.createSession(aeId, week, reviewerIds, managerId, notes);
-  const sessionId = session.session_id;
-
-  let aeName = aeId;
-  try {
-    const u = await client.users.info({ user: aeId });
-    aeName = u.user?.real_name || u.user?.name || aeId;
-  } catch (_) {}
-
-  // DM each reviewer (including manager) with Submit button — act right from the notification
-  const reviewerDms = {};
-  for (const reviewerId of session.reviewer_ids) {
-    try {
-      const open = await client.conversations.open({ users: reviewerId });
-      const isManager = reviewerId === managerId;
-      const intro = isManager
-        ? `Certification launched for *${aeName}* — ${session.week}. You're also a reviewer — submit below or track progress on the *Home* tab.`
-        : `You've been selected to review *${aeName}* — ${session.week}. Submit below or open the *Home* tab.`;
-      const msg = await client.chat.postMessage({
-        channel: open.channel.id,
-        text: intro,
-        blocks: [
-          { type: "section", text: { type: "mrkdwn", text: intro } },
-          {
-            type: "actions",
-            block_id: "review_actions",
-            elements: [
-              { type: "button", text: { type: "plain_text", text: "Submit review", emoji: true }, action_id: "submit_review_btn", value: sessionId, style: "primary" },
-            ],
-          },
-        ],
-      });
-      reviewerDms[reviewerId] = { channel: msg.channel, ts: msg.ts };
-    } catch (err) {
-      console.error("Failed to DM reviewer", reviewerId, err.message);
-    }
-  }
-  if (Object.keys(reviewerDms).length > 0) {
-    await db.updateSession(sessionId, { reviewer_dms: reviewerDms });
-  }
-
-  // Proactive Home updates for all reviewers, manager, and AE
-  for (const reviewerId of session.reviewer_ids) {
-    await publishHomeForUser(client, reviewerId);
-  }
-  await publishHomeForUser(client, managerId);
-  await publishHomeForUser(client, aeId);
-
+  // Ack immediately — Slack times out after 3s; DB/API calls can be slow
+  console.log("[manager_certify_modal] acking");
   await ack();
-  console.log("[ session ] created", sessionId, "reviewers:", session.reviewer_ids.length);
+  console.log("[manager_certify_modal] acked, starting background");
+
+  const runInBackground = async () => {
+    try {
+      const session = await db.createSession(aeId, week, reviewerIds, managerId, notes);
+      const sessionId = session.session_id;
+
+      let aeName = aeId;
+      try {
+        const u = await client.users.info({ user: aeId });
+        aeName = u.user?.real_name || u.user?.name || aeId;
+      } catch (_) {}
+
+      const reviewerDms = {};
+      for (const reviewerId of session.reviewer_ids) {
+        try {
+          const open = await client.conversations.open({ users: reviewerId });
+          const isManager = reviewerId === managerId;
+          const intro = isManager
+            ? `Certification launched for *${aeName}* — ${session.week}. You're also a reviewer — submit below or track progress on the *Home* tab.`
+            : `You've been selected to review *${aeName}* — ${session.week}. Submit below or open the *Home* tab.`;
+          const msg = await client.chat.postMessage({
+            channel: open.channel.id,
+            text: intro,
+            blocks: [
+              { type: "section", text: { type: "mrkdwn", text: intro } },
+              {
+                type: "actions",
+                block_id: "review_actions",
+                elements: [
+                  { type: "button", text: { type: "plain_text", text: "Submit review", emoji: true }, action_id: "submit_review_btn", value: sessionId, style: "primary" },
+                ],
+              },
+            ],
+          });
+          reviewerDms[reviewerId] = { channel: msg.channel, ts: msg.ts };
+        } catch (err) {
+          console.error("Failed to DM reviewer", reviewerId, err.message);
+        }
+      }
+      if (Object.keys(reviewerDms).length > 0) {
+        await db.updateSession(sessionId, { reviewer_dms: reviewerDms });
+      }
+
+      for (const reviewerId of session.reviewer_ids) {
+        await publishHomeForUser(client, reviewerId);
+      }
+      await publishHomeForUser(client, managerId);
+      await publishHomeForUser(client, aeId);
+      console.log("[ session ] created", sessionId, "reviewers:", session.reviewer_ids.length);
+    } catch (err) {
+      console.error("Cert creation failed:", err.message);
+      try {
+        const dm = await client.conversations.open({ users: managerId });
+        await client.chat.postMessage({
+          channel: dm.channel.id,
+          text: `Certification launch failed: ${err.message}. Please try again or check your database connection.`,
+        });
+      } catch (e) {
+        console.error("Could not notify user:", e.message);
+      }
+    }
+  };
+
+  try {
+    const { waitUntil } = require("@vercel/functions");
+    if (typeof waitUntil === "function") {
+      waitUntil(runInBackground());
+    } else {
+      runInBackground().catch((e) => console.error("Background cert failed:", e));
+    }
+  } catch (e) {
+    runInBackground().catch((err) => console.error("Background cert failed:", err));
+  }
 });
 
 // "Submit review" button: open reviewer modal (week-specific)
