@@ -38,7 +38,7 @@ In **Vercel** → Your Project → **Settings** → **Environment Variables**, a
 |----------|-------|----------|
 | `SLACK_BOT_TOKEN` | `xoxb-...` (Bot User OAuth Token) | Yes |
 | `SLACK_SIGNING_SECRET` | From Slack app → Basic Information | Yes |
-| `USE_VERCEL_KV` | `1` if using Vercel KV (Redis) | No |
+| `USE_VERCEL_KV` | `1` if using Upstash Redis (optional; auto-detected when creds exist) | No |
 | `USE_DYNAMODB` | `1` if using DynamoDB | No |
 | `AWS_REGION` | e.g. `us-east-1` | If using DynamoDB |
 | `AWS_ACCESS_KEY_ID` | Your AWS key | If using DynamoDB |
@@ -124,22 +124,19 @@ Serverless functions are stateless. Data does **not** persist between invocation
 **Options:**
 
 1. **In-memory** (default) — Data resets on each cold start. Fine for demos.
-2. **Vercel KV (Redis)** — Add Redis from Vercel Marketplace. No AWS needed. **Recommended.**
+2. **Upstash Redis** — Add Redis from Vercel Marketplace. No AWS needed. **Recommended.**
 3. **DynamoDB** — Set `USE_DYNAMODB=1` and AWS credentials.
 
-### Option A: Vercel KV (recommended — no AWS)
+### Option A: Upstash Redis (recommended — no AWS)
+
+The app uses `@upstash/redis` (Vercel KV is deprecated; Upstash is the supported replacement).
 
 1. Go to [Vercel Dashboard](https://vercel.com) → your project → **Storage** tab (or **Integrations**).
 2. Click **Create Database** / **Add Integration**.
-3. Choose **Upstash Redis** (or **Redis** from the [Marketplace](https://vercel.com/marketplace?category=storage&search=redis)).
-4. Follow the prompts to create the database. Vercel will inject `KV_REST_API_URL` and `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`) into your project.
-5. Add one environment variable in **Settings** → **Environment Variables**:
-   | Variable | Value |
-   |----------|-------|
-   | `USE_VERCEL_KV` | `1` |
-6. **Redeploy** so the new env var takes effect.
-
-Data will now persist. No AWS account or tables to create.
+3. Choose **Upstash Redis** from the [Marketplace](https://vercel.com/marketplace?category=storage&search=redis).
+4. Follow the prompts to create the database. Vercel will inject `KV_REST_API_URL` and `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`).
+5. **Redeploy** so the new env vars take effect. Redis mode is auto-enabled when credentials are present; you can also set `USE_VERCEL_KV=1` explicitly.
+6. Data will persist. No AWS account or tables to create.
 
 ### Option B: DynamoDB (requires AWS)
 

@@ -5,6 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "export-history": "node scripts/export-cert-history.js",
+    "verify-db": "node scripts/verify-db.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -15,7 +17,7 @@
     "@aws-sdk/client-dynamodb": "^3.700.0",
     "@aws-sdk/lib-dynamodb": "^3.700.0",
     "@slack/bolt": "^4.6.0",
-    "@vercel/kv": "^3.0.0",
+    "@upstash/redis": "^1.34.0",
     "@vercel/slack-bolt": "^1.1.0",
     "dotenv": "^17.2.4"
   }

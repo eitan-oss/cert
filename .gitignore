@@ -10,5 +10,10 @@ node_modules/
 *.log
 npm-debug.log*
 
+# Export output (may contain user data)
+cert-history.csv
+
 # OS
 .DS_Store
+.vercel
+.env*.local
