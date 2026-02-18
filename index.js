@@ -121,30 +121,30 @@ function buildWeek1RubricModal(sessionId, rubric) {
       text: { type: "mrkdwn", text: "*Sales Process Skills* _Check each item the AE demonstrated (min 4/5 to pass):_" },
     },
     ...rubric.sales_process.items.map((label, i) => ({
-      type: "input",
+      type: "actions",
       block_id: `sales_${i + 1}`,
-      optional: true,
-      element: {
-        type: "checkboxes",
-        action_id: `sales_${i + 1}_check`,
-        options: [{ text: { type: "plain_text", text: label }, value: "pass" }],
-      },
-      label: { type: "plain_text", text: "\u200b" },
+      elements: [
+        {
+          type: "checkboxes",
+          action_id: `sales_${i + 1}_check`,
+          options: [{ text: { type: "plain_text", text: label }, value: "pass" }],
+        },
+      ],
     })),
     {
       type: "section",
       text: { type: "mrkdwn", text: "*Product/Domain Knowledge* _Check each item demonstrated (min 3/5 to pass):_" },
     },
     ...rubric.product_domain.items.map((label, i) => ({
-      type: "input",
+      type: "actions",
       block_id: `product_${i + 1}`,
-      optional: true,
-      element: {
-        type: "checkboxes",
-        action_id: `product_${i + 1}_check`,
-        options: [{ text: { type: "plain_text", text: label }, value: "pass" }],
-      },
-      label: { type: "plain_text", text: "\u200b" },
+      elements: [
+        {
+          type: "checkboxes",
+          action_id: `product_${i + 1}_check`,
+          options: [{ text: { type: "plain_text", text: label }, value: "pass" }],
+        },
+      ],
     })),
     {
       type: "input",
